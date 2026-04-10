@@ -9,7 +9,7 @@ import time
 # -----------------------------
 # LOAD ENV
 # -----------------------------
-load_dotenv()
+load_dotenv(override="true")
 
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
@@ -38,13 +38,24 @@ def call_openai(prompt):
         return f"❌ OpenAI Error: {e}"
 
 # -----------------------------
-# CACHE NEWS (FIX FOR 429)
+# 🔥 FIXED NEWS (SITE PASSED)
 # -----------------------------
 @st.cache_data(ttl=300)
-def get_news():
-    url = f"https://newsapi.org/v2/everything?q=Equinor&apiKey={NEWS_API_KEY}"
+def get_news(site):
+
+    query_map = {
+        "Houston": "Equinor Houston Texas",
+        "Austin": "Equinor Austin Texas",
+        "Midland": "Equinor Midland Permian Basin",
+        "North Dakota": "Equinor North Dakota Bakken"
+    }
+
+    query = query_map.get(site, "Equinor")
+
+    url = f"https://newsapi.org/v2/everything?q={query}&apiKey={NEWS_API_KEY}"
+
     response = requests.get(url)
-    return response
+    return response, query
 
 # -----------------------------
 # UI CONFIG
@@ -97,18 +108,21 @@ if use_case == "Stakeholder Sentiment":
     if st.button("Fetch News"):
 
         with st.spinner("Fetching news..."):
-            time.sleep(1)  # prevent rapid clicks
+            time.sleep(1)
 
-            response = get_news()
+            response, query = get_news(site)
+
+            # 👉 SHOW QUERY USED
+            st.info(f"Query Used: {query}")
 
             # 🚨 HANDLE RATE LIMIT
             if response.status_code == 429:
                 st.warning("⚠️ Rate limit reached. Showing sample data instead.")
 
                 articles = [
-                    {"title": "Equinor faces environmental concerns in Texas"},
-                    {"title": "Oil drilling regulations tightening in US"},
-                    {"title": "Energy companies under ESG pressure"}
+                    {"title": f"Equinor faces environmental concerns in {site}"},
+                    {"title": f"Energy regulations tightening in {site}"},
+                    {"title": f"Community concerns rising in {site}"}
                 ]
 
             elif response.status_code != 200:
@@ -123,20 +137,29 @@ if use_case == "Stakeholder Sentiment":
                 st.warning("No news found")
             else:
                 for article in articles[:5]:
-                    title = article.get("title", "")
-                    desc = article.get("description", "")
 
-                    st.write(f"📰 {title}")
+                    raw_title = article.get("title", "")
+                    raw_desc = article.get("description", "")
 
+                    # 🔥 TRANSLATE + ANALYZE
                     prompt = f"""
-                    Analyze sentiment (Positive/Neutral/Negative),
-                    risk level (Low/Medium/High),
-                    and give 1-line summary:
+                    You are analyzing news for {site}.
 
-                    {title} {desc}
+                    If the text is not in English, translate it to English.
+
+                    Then return:
+                    - Translated title
+                    - Sentiment (Positive/Neutral/Negative)
+                    - Risk (Low/Medium/High)
+                    - One-line summary
+
+                    TEXT:
+                    {raw_title} {raw_desc}
                     """
 
                     result = call_openai(prompt)
+
+                    st.write("📰", raw_title)
                     st.write(result)
                     st.markdown("---")
 
